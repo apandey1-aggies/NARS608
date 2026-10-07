@@ -4,8 +4,8 @@ Residual vs predicted cumulative yield plots.
 Figure 1: all crops, one colour/marker per crop (both Amaranth varieties combined).
 Figure 2: Amaranth plots only, one colour/marker per variety.
 
-Uses the same data preparation and mixed model as yield_mixed_model.py:
-    Y_ijk = b0 + b_j(Crop) + b_i(AmarVar) + u_k(Irrigation) + e_ijk
+Uses the same data preparation and model as yield_fixed_model.py:
+    Y_ijk = b0 + b_j(Crop) + b_i(AmarVar) + b_k(Irrigation) + e_ijk
 
 Residual = actual cumulative yield - predicted cumulative yield (lbs).
 
@@ -25,7 +25,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-from yield_mixed_model import load_data, fit_mixed
+from yield_fixed_model import load_data, fit_model
 
 FONT_SIZE = 40
 
@@ -119,7 +119,7 @@ def main():
     args = ap.parse_args()
 
     cum = load_data(args.path, args.sheet)
-    res = fit_mixed(cum)
+    res = fit_model(cum)
     cum["Predicted"] = res.fittedvalues
     cum["Residual"] = cum["CumYield"] - cum["Predicted"]
 
