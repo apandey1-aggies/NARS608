@@ -5,7 +5,7 @@ Figure 1: all crops, one colour/marker per crop (both Amaranth varieties combine
 Figure 2: Amaranth plots only, one colour/marker per variety.
 
 Uses the same data preparation and mixed model as yield_mixed_model.py:
-    Y_ijk = b0 + b_j(Crop) + b_i(AmarVar) + u_k(Irrigation) + u_jk(Irrigation x Crop) + e_ijk
+    Y_ijk = b0 + b_j(Crop) + b_i(AmarVar) + u_k(Irrigation) + e_ijk
 
 Residual = actual cumulative yield - predicted cumulative yield (lbs).
 

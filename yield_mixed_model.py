@@ -3,20 +3,18 @@ Linear mixed model for cumulative yield (Python port of the R / lme4 / lmerTest 
 
 Model
 -----
-    Y_ijk = b0 + b_j(Crop) + b_i(AmarVar within Amaranth) + u_k(Irrigation)
-            + u_jk(Irrigation x Crop) + e_ijk
+    Y_ijk = b0 + b_j(Crop) + b_i(AmarVar within Amaranth) + u_k(Irrigation) + e_ijk
 
     Y_ijk = cumulative yield (lbs) of one plot
     b0    = intercept (Eggplant, reference crop)
     b_j   = fixed effect of crop (j = 1-5)
     b_i   = fixed effect of Amaranth variety (reference = Golden giant)
     u_k   = random effect of irrigation (k = 1-3),     u_k  ~ N(0, s2_k)
-    u_jk  = random effect of irrigation within crop,   u_jk ~ N(0, s2_jk)
     e_ijk = residual error,                            e_ijk ~ N(0, s2_e)
 
 R equivalent
 ------------
-    lmer(CumYield ~ Crop + AmarVar + (1 | Irrigation) + (1 | Irrigation:Crop), data = cum)
+    lmer(CumYield ~ Crop + AmarVar + (1 | Irrigation), data = cum)
 
 Usage
 -----
@@ -78,7 +76,6 @@ def load_data(path, sheet="Sheet1"):
     cum["AmarVar"] = (cum["Variety"] == "Green callaloo").astype(int)
     cum["Irrigation"] = pd.Categorical(cum["Irrigation"].map(IRRIGATION_LABELS),
                                        categories=IRRIGATION_ORDER)
-    cum["IrrCrop"] = cum["Irrigation"].astype(str) + ":" + cum["Crop"].astype(str)
     return cum
 
 
@@ -95,8 +92,7 @@ def pretty_term(name):
 
 # ------------------------------------------------------- mixed model -----
 FIXED_FORMULA = "CumYield ~ C(Crop) + AmarVar"
-VC_TERMS = {"Irrigation": "0 + C(Irrigation)",
-            "Irrigation:Crop": "0 + C(IrrCrop)"}
+VC_TERMS = {"Irrigation": "0 + C(Irrigation)"}
 
 
 def fit_mixed(cum, vc_terms=VC_TERMS):
@@ -167,16 +163,31 @@ def variance_table(res):
                          "Std_Dev": np.sqrt(vc.values).round(3)})
 
 
+def ols_reml_llf(cum):
+    """REML log-likelihood of the fixed-effects-only model (no random terms)."""
+    ols = smf.ols(FIXED_FORMULA, data=cum).fit()
+    X = ols.model.exog
+    n, k = X.shape
+    s2 = ols.ssr / (n - k)
+    return -0.5 * ((n - k) * np.log(2 * np.pi * s2) + (n - k)
+                   + np.linalg.slogdet(X.T @ X)[1])
+
+
 def ranova(cum, full):
     """REML likelihood-ratio test for dropping each random term."""
     rows = [{"Model": "<none>", "npar": len(full.params), "logLik": round(full.llf, 3),
              "LRT": np.nan, "Df": np.nan, "p_value": np.nan}]
     for term in VC_TERMS:
         reduced_terms = {k: v for k, v in VC_TERMS.items() if k != term}
-        red = fit_mixed(cum, reduced_terms)
-        lrt = max(2 * (full.llf - red.llf), 0.0)
-        rows.append({"Model": f"-(1 | {term})", "npar": len(red.params),
-                     "logLik": round(red.llf, 3), "LRT": round(lrt, 4), "Df": 1,
+        if reduced_terms:
+            red_llf = fit_mixed(cum, reduced_terms).llf
+        else:
+            # no random effects left: REML log-likelihood of the plain linear
+            # model, as logLik(lm(...), REML = TRUE) in R
+            red_llf = ols_reml_llf(cum)
+        lrt = max(2 * (full.llf - red_llf), 0.0)
+        rows.append({"Model": f"-(1 | {term})", "npar": len(full.params) - 1,
+                     "logLik": round(red_llf, 3), "LRT": round(lrt, 4), "Df": 1,
                      "p_value": float(f"{stats.chi2.sf(lrt, 1):.3g}")})
     return pd.DataFrame(rows)
 
@@ -222,14 +233,13 @@ def main():
 
     print("\n==================== MODEL EQUATION ====================")
     print("Y_ijk = b0 + b_j(Crop) + b_i(AmarVar within Amaranth) + u_k(Irrigation)"
-          " + u_jk(Irrigation x Crop) + e_ijk\n")
+          " + e_ijk\n")
     print("Dictionary:")
     print("  Y_ijk   = cumulative yield (lbs) of one plot")
     print("  b0      = intercept (Eggplant, reference crop)")
     print("  b_j     = fixed effect of crop (j = 1-5)")
     print("  b_i     = fixed effect of Amaranth variety (reference = Golden giant)")
     print("  u_k     = random effect of irrigation (k = 1-3), u_k ~ N(0, s2_k)")
-    print("  u_jk    = random effect of irrigation within crop, u_jk ~ N(0, s2_jk)")
     print("  e_ijk   = residual error, e_ijk ~ N(0, s2_e)")
 
     print("\n==================== MIXED MODEL SUMMARY ====================")
@@ -276,7 +286,6 @@ def main():
     print(f"Random: {VC_TERMS}")
     print("Fixed single effects: Crop, AmarVar (Amaranth variety nested in crop)")
     print("Random single effect: Irrigation")
-    print("Random interaction effect: Irrigation x Crop")
 
     # ---------------- Predicted cumulative yield by crop/variety ----------------
     print("\n==================== PREDICTED CUMULATIVE YIELD (lbs) ====================")
@@ -297,8 +306,6 @@ def main():
     print("\n==================== ESTIMATED IRRIGATION EFFECTS (BLUPs) ====================")
     re = blups(res)
     print(re["Irrigation"])
-    print("\nIrrigation x Crop effects:")
-    print(re["Irrigation:Crop"])
 
     print("\nObserved mean cumulative yield by irrigation:")
     print(cum.groupby("Irrigation", observed=True)["CumYield"].mean().round(2)
